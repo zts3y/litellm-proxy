@@ -26,13 +26,13 @@ This generates credentials stored locally that `litellm` and `google-auth` will 
    python3 -m venv venv
    source venv/bin/activate
    ```
-3. Install dependencies from [requirements.txt](file:///Users/zacksarver/Documents/sources/litellm/requirements.txt):
+3. Install dependencies from [requirements.txt](requirements.txt):
    ```bash
    pip install -r requirements.txt
    ```
 
 ### 4. Configuration
-Create a `.env` file in the root directory (you can copy the template from [.env.example](file:///Users/zacksarver/Documents/sources/litellm/.env.example)):
+Create a `.env` file in the root directory (you can copy the template from [.env.example](.env.example)):
 ```bash
 cp .env.example .env
 ```
@@ -76,7 +76,7 @@ Google Cloud's **Gemini Enterprise Agent Platform** is the evolution of Vertex A
 - **LiteLLM Proxy Role**: Using LiteLLM as an orchestration or proxy layer allows you to translate standard OpenAI-compatible API calls (like completions and chat completions) directly into GCP Vertex AI payloads. This facilitates multi-model fallbacks, standardizes metrics/logging, and centralizes billing governance.
 
 ### 3. Dynamic Model Garden Querying
-The FastAPI backend in [main.py](file:///Users/zacksarver/Documents/sources/litellm/main.py) shows an elegant method to query available Model Garden models dynamically using the local `gcloud` CLI tool:
+The FastAPI backend in [main.py](main.py) shows an elegant method to query available Model Garden models dynamically using the local `gcloud` CLI tool:
 ```python
 result = subprocess.run(
     ["gcloud", "ai", "model-garden", "models", "list", "--format=json"],
@@ -95,7 +95,7 @@ If the command fails (e.g., in headless deployments or environments without the 
 ### 4. Code Implementation Patterns
 
 #### Async Streaming via Server-Sent Events (SSE)
-FastAPI and LiteLLM allow you to stream output token-by-token, which is critical for natural agentic conversations. The app implements this inside [main.py](file:///Users/zacksarver/Documents/sources/litellm/main.py#L93-L118):
+FastAPI and LiteLLM allow you to stream output token-by-token, which is critical for natural agentic conversations. The app implements this inside [main.py](main.py#L93-L118):
 
 ```python
 async def event_generator(model: str, messages: List[Dict], project: str, location: str, temperature: Optional[float], max_tokens: Optional[int]):
@@ -119,20 +119,20 @@ async def event_generator(model: str, messages: List[Dict], project: str, locati
     finally:
         yield "data: [DONE]\n\n"
 ```
-The client-side JavaScript in [app.js](file:///Users/zacksarver/Documents/sources/litellm/static/app.js) parses this stream using the `EventSource` interface or an async `fetch` stream to update the chat bubbles in real-time.
+The client-side JavaScript in [app.js](static/app.js) parses this stream using the `EventSource` interface or an async `fetch` stream to update the chat bubbles in real-time.
 
 ---
 
 ## 📂 Project Structure
 
-- 📁 [docs/](file:///Users/zacksarver/Documents/sources/litellm/docs)
-  - 📁 [intent/](file:///Users/zacksarver/Documents/sources/litellm/docs/intent)
-    - [vertex_ai_chat.md](file:///Users/zacksarver/Documents/sources/litellm/docs/intent/vertex_ai_chat.md): Statement of intent detailing the project's purpose and scope constraints.
-- 📁 [static/](file:///Users/zacksarver/Documents/sources/litellm/static)
-  - [index.html](file:///Users/zacksarver/Documents/sources/litellm/static/index.html): HTML UI layout of the single-page chat interface.
-  - [style.css](file:///Users/zacksarver/Documents/sources/litellm/static/style.css): Vanilla CSS styling the responsive, glassmorphic UI.
-  - [app.js](file:///Users/zacksarver/Documents/sources/litellm/static/app.js): Client-side script handling SSE connection and interactive chat updates.
-- [main.py](file:///Users/zacksarver/Documents/sources/litellm/main.py): FastAPI backend script setting up endpoints for model discovery and streaming completions.
-- [test_connection.py](file:///Users/zacksarver/Documents/sources/litellm/test_connection.py): CLI utility to test GCP authentication and execute a basic Vertex AI prompt.
-- [requirements.txt](file:///Users/zacksarver/Documents/sources/litellm/requirements.txt): Python dependencies needed to run the application.
-- [.env.example](file:///Users/zacksarver/Documents/sources/litellm/.env.example): Environment variable configuration template.
+- 📁 [docs/](docs)
+  - 📁 [intent/](docs/intent)
+    - [vertex_ai_chat.md](docs/intent/vertex_ai_chat.md): Statement of intent detailing the project's purpose and scope constraints.
+- 📁 [static/](static)
+  - [index.html](static/index.html): HTML UI layout of the single-page chat interface.
+  - [style.css](static/style.css): Vanilla CSS styling the responsive, glassmorphic UI.
+  - [app.js](static/app.js): Client-side script handling SSE connection and interactive chat updates.
+- [main.py](main.py): FastAPI backend script setting up endpoints for model discovery and streaming completions.
+- [test_connection.py](test_connection.py): CLI utility to test GCP authentication and execute a basic Vertex AI prompt.
+- [requirements.txt](requirements.txt): Python dependencies needed to run the application.
+- [.env.example](.env.example): Environment variable configuration template.
