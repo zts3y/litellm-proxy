@@ -94,7 +94,13 @@ document.addEventListener('DOMContentLoaded', () => {
             statusIndicator.style.color = 'var(--color-error)';
             
             // Create fallback option in select
-            modelSelect.innerHTML = '<option value="vertex_ai/gemini-2.5-flash" selected>Gemini 2.5 Flash (Fallback)</option><option value="vertex_ai/gemini-2.5-pro">Gemini 2.5 Pro (Fallback)</option>';
+            modelSelect.innerHTML = `
+                <option value="vertex_ai/gemini-2.5-flash" selected>Gemini 2.5 Flash (Fallback)</option>
+                <option value="vertex_ai/gemini-2.5-pro">Gemini 2.5 Pro (Fallback)</option>
+                <option value="vertex_ai/gemini-3.5-flash">Gemini 3.5 Flash (Fallback)</option>
+                <option value="vertex_ai/gemini-3-flash-preview">Gemini 3 Flash Preview (Fallback)</option>
+                <option value="vertex_ai/gemini-3-pro-preview">Gemini 3 Pro Preview (Fallback)</option>
+            `;
             updateModelHeader();
             chatInput.disabled = false;
         }
