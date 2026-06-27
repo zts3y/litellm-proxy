@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vertex AI LiteLLM Playground</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar for configuration -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-container">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="url(#logo-grad)"/>
+                        <path d="M2 17L12 22L22 17" stroke="url(#logo-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 12L12 17L22 12" stroke="url(#logo-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs>
+                            <linearGradient id="logo-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#818cf8"/>
+                                <stop offset="1" stop-color="#c084fc"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <h1>Vertex AI Hub</h1>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text" id="gcp-status">Connecting...</span>
+                </div>
+            </div>
+
+            <div class="sidebar-content">
+                <form id="config-form">
+                    <div class="form-group">
+                        <label for="model-select">
+                            <span>Select Model</span>
+                            <svg class="label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                        </label>
+                        <div class="select-wrapper">
+                            <select id="model-select" class="form-control">
+                                <option value="" disabled selected>Loading models...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="system-prompt">
+                            <span>System Instructions</span>
+                            <svg class="label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        </label>
+                        <textarea id="system-prompt" class="form-control" placeholder="You are a helpful AI assistant connected to Vertex AI via LiteLLM..."></textarea>
+                    </div>
+
+                    <!-- Streaming Toggle -->
+                    <div class="form-group toggle-group">
+                        <div class="toggle-label-container">
+                            <span class="toggle-title">Enable Streaming</span>
+                            <span class="toggle-description">Stream response word-by-word</span>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="stream-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Collapsible Advanced Settings -->
+                    <details class="advanced-settings">
+                        <summary>
+                            <span>Advanced Settings</span>
+                            <svg class="summary-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></summary>
+                        </summary>
+                        <div class="advanced-content">
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="temperature-slider">Temperature</label>
+                                    <span id="temperature-value">0.7</span>
+                                </div>
+                                <input type="range" id="temperature-slider" min="0" max="2" step="0.1" value="0.7" class="slider-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="max-tokens-input">Max Output Tokens</label>
+                                <input type="number" id="max-tokens-input" min="1" max="8192" value="2048" class="form-control numeric-input">
+                            </div>
+                        </div>
+                    </details>
+                </form>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="powered-by">
+                    <span>Powered by</span>
+                    <a href="https://github.com/BerriAI/litellm" target="_blank" class="litellm-badge">LiteLLM</a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <header class="chat-header">
+                <div class="header-info">
+                    <h2 id="active-model-title">Gemini Model Playground</h2>
+                    <p id="active-model-desc">Select a model from the sidebar to begin.</p>
+                </div>
+                <button class="btn btn-secondary" id="clear-chat-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
+                    <span>Clear Chat</span>
+                </button>
+            </header>
+
+            <div class="chat-messages" id="chat-messages">
+                <!-- Welcome/Empty State Message -->
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-state-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <h3>Start a Conversation</h3>
+                    <p>Type a message below to test connections and stream responses from Vertex AI Gemini models in real-time.</p>
+                    <div class="quick-prompts">
+                        <button class="quick-prompt-btn">Explain quantum computing in simple terms</button>
+                        <button class="quick-prompt-btn">Write a Python script to verify an API key</button>
+                        <button class="quick-prompt-btn">Compose a professional email asking for project updates</button>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="chat-input-area">
+                <form id="chat-form" class="chat-form-container">
+                    <textarea id="chat-input" placeholder="Type a message or press CMD + Enter to send..." rows="1" required></textarea>
+                    <button type="submit" id="send-btn" class="btn btn-primary" disabled>
+                        <svg class="send-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M22 2L15 22L11 13L2 9L22 2Z" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </form>
+            </footer>
+        </main>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

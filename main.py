@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import subprocess
+import uvicorn
 from typing import List, Dict, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -183,7 +184,7 @@ async def read_index():
         return {"message": "Server is running. Frontend static/index.html not created yet."}
     return FileResponse(index_path)
 
-app.mount("/", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
