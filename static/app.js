@@ -69,8 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const opt = document.createElement('option');
                 opt.value = model.id;
                 opt.textContent = model.name;
-                // Default to gemini-2.5-flash if present, otherwise first model
-                if (model.id === 'vertex_ai/gemini-2.5-flash') {
+                // Default to gemini-3.5-flash if present, otherwise first model
+                if (model.id === 'vertex_ai/gemini-3.5-flash') {
                     opt.selected = true;
                 }
                 modelSelect.appendChild(opt);
@@ -95,9 +95,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Create fallback option in select
             modelSelect.innerHTML = `
-                <option value="vertex_ai/gemini-2.5-flash" selected>Gemini 2.5 Flash (Fallback)</option>
+                <option value="vertex_ai/gemini-3.5-flash" selected>Gemini 3.5 Flash (Fallback)</option>
+                <option value="vertex_ai/gemini-2.5-flash">Gemini 2.5 Flash (Fallback)</option>
                 <option value="vertex_ai/gemini-2.5-pro">Gemini 2.5 Pro (Fallback)</option>
-                <option value="vertex_ai/gemini-3.5-flash">Gemini 3.5 Flash (Fallback)</option>
                 <option value="vertex_ai/gemini-3-flash-preview">Gemini 3 Flash Preview (Fallback)</option>
                 <option value="vertex_ai/gemini-3-pro-preview">Gemini 3 Pro Preview (Fallback)</option>
             `;

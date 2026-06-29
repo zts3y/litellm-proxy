@@ -1,6 +1,6 @@
 # LiteLLM & GCP Gemini Agent Platform Integration
 
-This project is a lightweight FastAPI-based web application and developer proof-of-concept demonstrating how to integrate **LiteLLM** with the **GCP Gemini Agent Platform** (formerly Vertex AI) to build conversational interfaces with streaming support.
+This project is a lightweight FastAPI-based web application and developer proof-of-concept demonstrating how to integrate the **Strands Agents SDK** with **LiteLLM** and the **GCP Gemini Agent Platform** (formerly Vertex AI) to build conversational interfaces with streaming support.
 
 ---
 
@@ -26,9 +26,9 @@ This generates credentials stored locally that `litellm` and `google-auth` will 
    python3 -m venv venv
    source venv/bin/activate
    ```
-3. Install dependencies from [requirements.txt](requirements.txt):
+3. Install dependencies from [requirements.txt](requirements.txt). Note that if you are using Python 3.14+, you must use the `--ignore-requires-python` flag (since some packages like `litellm` currently specify `<3.14` support):
    ```bash
-   pip install -r requirements.txt
+   pip install --ignore-requires-python -r requirements.txt
    ```
 
 ### 4. Configuration
@@ -75,17 +75,15 @@ Google Cloud's **Gemini Enterprise Agent Platform** is the evolution of Vertex A
 - **Model Garden**: Google's repository of foundational and third-party models. The platform allows you to use models from Google (e.g., Gemini 2.5 Flash, 2.5 Pro, 3.5 Flash) alongside curated open-source or third-party models (like Claude) as first-class citizens.
 - **LiteLLM Proxy Role**: Using LiteLLM as an orchestration or proxy layer allows you to translate standard OpenAI-compatible API calls (like completions and chat completions) directly into GCP Vertex AI payloads. This facilitates multi-model fallbacks, standardizes metrics/logging, and centralizes billing governance.
 
-### 3. Dynamic Model Garden Querying
-The FastAPI backend in [main.py](main.py) shows an elegant method to query available Model Garden models dynamically using the local `gcloud` CLI tool:
+### 3. Dynamic Model Discovery via LiteLLM Registry
+The FastAPI backend in [main.py](main.py) queries available Gemini models dynamically from LiteLLM's built-in provider registry:
 ```python
-result = subprocess.run(
-    ["gcloud", "ai", "model-garden", "models", "list", "--format=json"],
-    capture_output=True,
-    text=True,
-    check=True
-)
+def list_gemini_models():
+    vertex_models = litellm.models_by_provider.get("vertex_ai", [])
+    gemini_models = [m for m in vertex_models if "gemini" in m.lower()]
+    ...
 ```
-If the command fails (e.g., in headless deployments or environments without the SDK), the app gracefully reverts to a robust static fallback list of Vertex AI models:
+If the registry returns no Gemini models, the app gracefully reverts to a static fallback list:
 - `vertex_ai/gemini-2.5-flash`
 - `vertex_ai/gemini-2.5-pro`
 - `vertex_ai/gemini-3.5-flash`
@@ -94,32 +92,33 @@ If the command fails (e.g., in headless deployments or environments without the 
 
 ### 4. Code Implementation Patterns
 
-#### Async Streaming via Server-Sent Events (SSE)
-FastAPI and LiteLLM allow you to stream output token-by-token, which is critical for natural agentic conversations. The app implements this inside [main.py](main.py#L93-L118):
+#### Strands Agent with Async Streaming via SSE
+The app uses the **Strands Agents SDK** as an orchestration layer over LiteLLM. The `LiteLLMModel` provider routes requests through LiteLLM to Vertex AI, while the `Agent` class manages the conversation loop and streams text deltas via `stream_async()`. The app implements this inside [main.py](main.py#L88-L133):
 
 ```python
-async def event_generator(model: str, messages: List[Dict], project: str, location: str, temperature: Optional[float], max_tokens: Optional[int]):
-    try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            vertex_project=project,
-            vertex_location=location,
-            stream=True,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            content = delta.content if delta.content is not None else ""
-            if content:
-                yield f"data: {json.dumps({'content': content})}\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-    finally:
-        yield "data: [DONE]\n\n"
+from strands import Agent
+from strands.models.litellm import LiteLLMModel
+
+async def event_generator(model_id, messages, project, location, ...):
+    model = LiteLLMModel(
+        model_id=model_id,
+        client_args={"vertex_project": project, "vertex_location": location},
+        params={"temperature": temperature, "max_tokens": max_tokens}
+    )
+    agent = Agent(model=model, system_prompt=system_prompt, callback_handler=None)
+
+    async for event in agent.stream_async(messages):
+        if "data" in event:
+            yield f"data: {json.dumps({'content': event['data']})}\n\n"
 ```
-The client-side JavaScript in [app.js](static/app.js) parses this stream using the `EventSource` interface or an async `fetch` stream to update the chat bubbles in real-time.
+
+Key details:
+- **`callback_handler=None`** suppresses the default `PrintingCallbackHandler` that would duplicate output to stdout.
+- **`stream_async`** yields `TextStreamEvent` dicts where `"data"` contains **text deltas** (not cumulative text).
+- **`invoke_async`** is used for the non-streaming path, returning a full `AgentResult`.
+- **Parallel tool execution** is supported via the default `ConcurrentToolExecutor`, though no tools are currently registered.
+
+The client-side JavaScript in [app.js](static/app.js) parses this SSE stream via an async `fetch` reader to update the chat bubbles in real-time.
 
 ---
 
@@ -132,7 +131,8 @@ The client-side JavaScript in [app.js](static/app.js) parses this stream using t
   - [index.html](static/index.html): HTML UI layout of the single-page chat interface.
   - [style.css](static/style.css): Vanilla CSS styling the responsive, glassmorphic UI.
   - [app.js](static/app.js): Client-side script handling SSE connection and interactive chat updates.
-- [main.py](main.py): FastAPI backend script setting up endpoints for model discovery and streaming completions.
+- [main.py](main.py): FastAPI backend using Strands Agent + LiteLLM for model discovery and streaming completions.
+- [test_main.py](test_main.py): Unit tests for all endpoints, model discovery, and streaming/non-streaming paths.
 - [test_connection.py](test_connection.py): CLI utility to test GCP authentication and execute a basic Vertex AI prompt.
-- [requirements.txt](requirements.txt): Python dependencies needed to run the application.
+- [requirements.txt](requirements.txt): Python dependencies (includes `strands-agents`, `litellm`, `fastapi`).
 - [.env.example](.env.example): Environment variable configuration template.

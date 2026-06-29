@@ -71,13 +71,18 @@ def test_chat_endpoint_missing_project(monkeypatch):
     assert "GCP project ID is not configured" in response.json()["detail"]
 
 # Test /api/chat POST Endpoint - Non-streaming success
-@patch("main.litellm.acompletion", new_callable=AsyncMock)
-def test_chat_endpoint_non_streaming_success(mock_acompletion):
-    mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content="Hello! I am Gemini."))
-    ]
-    mock_acompletion.return_value = mock_response
+@patch("main.Agent")
+@patch("main.LiteLLMModel")
+def test_chat_endpoint_non_streaming_success(mock_model_cls, mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+    
+    mock_result = MagicMock()
+    mock_result.message = {
+        "role": "assistant",
+        "content": [{"text": "Hello! I am Gemini."}]
+    }
+    mock_agent.invoke_async = AsyncMock(return_value=mock_result)
 
     client = TestClient(app)
     payload = {
@@ -92,24 +97,31 @@ def test_chat_endpoint_non_streaming_success(mock_acompletion):
     assert response.status_code == 200
     assert response.json() == {"content": "Hello! I am Gemini."}
 
-    # Verify litellm.acompletion was called with correct parameters
-    mock_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-2.5-flash",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Hello"}
-        ],
-        vertex_project="test-project",
-        vertex_location="us-central1",
-        stream=False,
-        temperature=0.7,
-        max_tokens=100
+    # Verify LiteLLMModel and Agent were initialized correctly
+    mock_model_cls.assert_called_once_with(
+        model_id="vertex_ai/gemini-2.5-flash",
+        client_args={
+            "vertex_project": "test-project",
+            "vertex_location": "us-central1"
+        },
+        params={"temperature": 0.7, "max_tokens": 100}
     )
+    mock_agent_cls.assert_called_once_with(
+        model=mock_model_cls.return_value,
+        system_prompt="You are a helpful assistant.",
+        callback_handler=None
+    )
+    mock_agent.invoke_async.assert_called_once_with([
+        {"role": "user", "content": [{"text": "Hello"}]}
+    ])
 
 # Test /api/chat POST Endpoint - Non-streaming failure
-@patch("main.litellm.acompletion", new_callable=AsyncMock)
-def test_chat_endpoint_non_streaming_failure(mock_acompletion):
-    mock_acompletion.side_effect = Exception("Vertex API connection error")
+@patch("main.Agent")
+@patch("main.LiteLLMModel")
+def test_chat_endpoint_non_streaming_failure(mock_model_cls, mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+    mock_agent.invoke_async = AsyncMock(side_effect=Exception("Vertex API connection error"))
 
     client = TestClient(app)
     payload = {
@@ -122,19 +134,18 @@ def test_chat_endpoint_non_streaming_failure(mock_acompletion):
     assert response.json()["detail"] == "Vertex API connection error"
 
 # Test /api/chat POST Endpoint - Streaming success
-@patch("main.litellm.acompletion", new_callable=AsyncMock)
-def test_chat_endpoint_streaming_success(mock_acompletion):
-    async def mock_generator():
-        # Yield first chunk
-        chunk1 = MagicMock()
-        chunk1.choices = [MagicMock(delta=MagicMock(content="Hello"))]
-        yield chunk1
-        # Yield second chunk
-        chunk2 = MagicMock()
-        chunk2.choices = [MagicMock(delta=MagicMock(content=" world"))]
-        yield chunk2
+@patch("main.Agent")
+@patch("main.LiteLLMModel")
+def test_chat_endpoint_streaming_success(mock_model_cls, mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
 
-    mock_acompletion.return_value = mock_generator()
+    # Strands stream_async emits text deltas via TextStreamEvent
+    async def mock_generator(*args, **kwargs):
+        yield {"data": "Hello"}
+        yield {"data": " world"}
+
+    mock_agent.stream_async = mock_generator
 
     client = TestClient(app)
     payload = {
@@ -148,33 +159,34 @@ def test_chat_endpoint_streaming_success(mock_acompletion):
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
-    # Read output stream
+    # Read output stream — data events are already deltas (not cumulative)
     lines = [line.strip() for line in response.text.split("\n") if line.strip()]
     assert lines[0] == 'data: {"content": "Hello"}'
     assert lines[1] == 'data: {"content": " world"}'
     assert lines[2] == 'data: [DONE]'
 
-    # Verify litellm.acompletion called with correct parameters
-    mock_acompletion.assert_called_once_with(
-        model="vertex_ai/gemini-2.5-flash",
-        messages=[{"role": "user", "content": "Hello"}],
-        vertex_project="test-project",
-        vertex_location="us-central1",
-        stream=True,
-        temperature=0.8,
-        max_tokens=50
+    # Verify parameters
+    mock_model_cls.assert_called_once_with(
+        model_id="vertex_ai/gemini-2.5-flash",
+        client_args={
+            "vertex_project": "test-project",
+            "vertex_location": "us-central1"
+        },
+        params={"temperature": 0.8, "max_tokens": 50}
     )
 
 # Test /api/chat POST Endpoint - Streaming failure mid-stream
-@patch("main.litellm.acompletion", new_callable=AsyncMock)
-def test_chat_endpoint_streaming_failure_mid_stream(mock_acompletion):
-    async def mock_generator():
-        chunk = MagicMock()
-        chunk.choices = [MagicMock(delta=MagicMock(content="Start"))]
-        yield chunk
+@patch("main.Agent")
+@patch("main.LiteLLMModel")
+def test_chat_endpoint_streaming_failure_mid_stream(mock_model_cls, mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    async def mock_generator(*args, **kwargs):
+        yield {"data": "Start"}
         raise ValueError("Vertex connection lost")
 
-    mock_acompletion.return_value = mock_generator()
+    mock_agent.stream_async = mock_generator
 
     client = TestClient(app)
     payload = {
@@ -191,9 +203,17 @@ def test_chat_endpoint_streaming_failure_mid_stream(mock_acompletion):
     assert lines[2] == 'data: [DONE]'
 
 # Test /api/chat POST Endpoint - Streaming failure immediately on call
-@patch("main.litellm.acompletion", new_callable=AsyncMock)
-def test_chat_endpoint_streaming_failure_immediate(mock_acompletion):
-    mock_acompletion.side_effect = Exception("Auth failed")
+@patch("main.Agent")
+@patch("main.LiteLLMModel")
+def test_chat_endpoint_streaming_failure_immediate(mock_model_cls, mock_agent_cls):
+    mock_agent = MagicMock()
+    mock_agent_cls.return_value = mock_agent
+
+    async def mock_generator(*args, **kwargs):
+        raise Exception("Auth failed")
+        yield {}  # make it a generator function
+
+    mock_agent.stream_async = mock_generator
 
     client = TestClient(app)
     payload = {

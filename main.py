@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import litellm
+from strands import Agent
+from strands.models.litellm import LiteLLMModel
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -83,24 +85,44 @@ async def get_models():
     """Returns available Gemini models."""
     return list_gemini_models()
 
-async def event_generator(model: str, messages: List[Dict], project: str, location: str, temperature: Optional[float], max_tokens: Optional[int]):
-    """Async generator yielding Server-Sent Events (SSE) chunks from LiteLLM."""
+async def event_generator(
+    model_id: str,
+    messages: List[Dict],
+    project: str,
+    location: str,
+    system_prompt: Optional[str],
+    temperature: Optional[float],
+    max_tokens: Optional[int]
+):
+    """Async generator yielding Server-Sent Events (SSE) chunks from Strands Agent."""
     try:
-        # Call LiteLLM async stream completion
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            vertex_project=project,
-            vertex_location=location,
-            stream=True,
-            temperature=temperature,
-            max_tokens=max_tokens
+        params = {}
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+
+        # Initialize the Strands LiteLLM model provider
+        model = LiteLLMModel(
+            model_id=model_id,
+            client_args={
+                "vertex_project": project,
+                "vertex_location": location,
+            },
+            params=params if params else None
         )
-        
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            content = delta.content if delta.content is not None else ""
-            if content:
+
+        # Initialize the Strands Agent
+        agent = Agent(
+            model=model,
+            system_prompt=system_prompt,
+            callback_handler=None
+        )
+
+        # Run the agent async stream
+        async for event in agent.stream_async(messages):
+            if "data" in event:
+                content = event["data"]
                 # SSE format data
                 yield f"data: {json.dumps({'content': content})}\n\n"
                 
@@ -122,21 +144,22 @@ async def chat_endpoint(request: ChatRequest):
             detail="GCP project ID is not configured. Please set VERTEX_PROJECT in your .env file."
         )
 
-    # Prepare messages
+    # Format history messages for Strands Agent (role and content as a list of ContentBlock dicts)
     formatted_messages = []
-    if request.system_prompt:
-        formatted_messages.append({"role": "system", "content": request.system_prompt})
-    
     for msg in request.messages:
-        formatted_messages.append({"role": msg.role, "content": msg.content})
+        formatted_messages.append({
+            "role": msg.role,
+            "content": [{"text": msg.content}]
+        })
 
     if request.stream:
         return StreamingResponse(
             event_generator(
-                model=request.model,
+                model_id=request.model,
                 messages=formatted_messages,
                 project=project,
                 location=location,
+                system_prompt=request.system_prompt,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens
             ),
@@ -149,17 +172,41 @@ async def chat_endpoint(request: ChatRequest):
         )
     else:
         try:
-            response = await litellm.acompletion(
-                model=request.model,
-                messages=formatted_messages,
-                vertex_project=project,
-                vertex_location=location,
-                stream=False,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens
+            params = {}
+            if request.temperature is not None:
+                params["temperature"] = request.temperature
+            if request.max_tokens is not None:
+                params["max_tokens"] = request.max_tokens
+
+            # Initialize the Strands LiteLLM model provider
+            model = LiteLLMModel(
+                model_id=request.model,
+                client_args={
+                    "vertex_project": project,
+                    "vertex_location": location,
+                },
+                params=params if params else None
             )
+
+            # Initialize the Strands Agent
+            agent = Agent(
+                model=model,
+                system_prompt=request.system_prompt,
+                callback_handler=None
+            )
+
+            # Invoke agent asynchronously
+            result = await agent.invoke_async(formatted_messages)
+
+            # Extract response text
+            content_text = ""
+            if result.message and "content" in result.message:
+                for block in result.message["content"]:
+                    if "text" in block:
+                        content_text += block["text"]
+
             return {
-                "content": response.choices[0].message.content or ""
+                "content": content_text
             }
         except Exception as e:
             logger.error(f"Error during standard completion: {e}")
