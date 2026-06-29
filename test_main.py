@@ -12,58 +12,40 @@ os.environ["VERTEX_LOCATION"] = "us-central1"
 from main import app, list_gemini_models, FALLBACK_MODELS
 
 # Test list_gemini_models - Success Case with Gemini Models
-@patch("main.subprocess.run")
-def test_list_gemini_models_success(mock_run):
-    mock_proc = MagicMock()
-    mock_proc.stdout = json.dumps([
-        {"name": "publishers/google/models/gemini-2.5-flash"},
-        {"name": "publishers/google/models/gemini-2.5-pro"},
-        {"name": "publishers/google/models/text-bison"}
-    ])
-    mock_proc.returncode = 0
-    mock_run.return_value = mock_proc
+@patch("main.litellm.models_by_provider")
+def test_list_gemini_models_success(mock_models):
+    mock_models.get.return_value = [
+        "gemini-2.5-flash",
+        "vertex_ai/gemini-2.5-pro",
+        "text-bison"
+    ]
 
     models = list_gemini_models()
     assert models == [
         {"id": "vertex_ai/gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
         {"id": "vertex_ai/gemini-2.5-pro", "name": "Gemini 2.5 Pro"}
     ]
-    mock_run.assert_called_once_with(
-        ["gcloud", "ai", "model-garden", "models", "list", "--format=json"],
-        capture_output=True,
-        text=True,
-        check=True
-    )
+    mock_models.get.assert_called_once_with("vertex_ai", [])
 
 # Test list_gemini_models - Success Case but No Gemini Models
-@patch("main.subprocess.run")
-def test_list_gemini_models_no_gemini(mock_run):
-    mock_proc = MagicMock()
-    mock_proc.stdout = json.dumps([
-        {"name": "publishers/google/models/text-bison"},
-        {"name": "publishers/google/models/imagen"}
-    ])
-    mock_proc.returncode = 0
-    mock_run.return_value = mock_proc
+@patch("main.litellm.models_by_provider")
+def test_list_gemini_models_no_gemini(mock_models):
+    mock_models.get.return_value = [
+        "text-bison",
+        "imagen"
+    ]
 
     models = list_gemini_models()
     assert models == FALLBACK_MODELS
 
-# Test list_gemini_models - Subprocess Failure Case
-@patch("main.subprocess.run")
-def test_list_gemini_models_failure(mock_run):
-    mock_run.side_effect = subprocess.CalledProcessError(1, "gcloud")
+# Test list_gemini_models - Registry Failure Case
+@patch("main.litellm.models_by_provider")
+def test_list_gemini_models_failure(mock_models):
+    mock_models.get.side_effect = Exception("Registry error")
 
     models = list_gemini_models()
     assert models == FALLBACK_MODELS
 
-# Test list_gemini_models - Subprocess Not Found / Other Exception
-@patch("main.subprocess.run")
-def test_list_gemini_models_exception(mock_run):
-    mock_run.side_effect = FileNotFoundError("gcloud not found")
-
-    models = list_gemini_models()
-    assert models == FALLBACK_MODELS
 
 # Test /api/models GET Endpoint
 def test_get_models_endpoint():

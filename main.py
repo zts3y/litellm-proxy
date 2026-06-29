@@ -40,37 +40,30 @@ FALLBACK_MODELS = [
 ]
 
 def list_gemini_models():
-    """Query model garden using gcloud CLI and filter for Gemini models, or return fallbacks."""
+    """Extract Gemini models supported by Vertex AI from LiteLLM's built-in models list or return fallbacks."""
     try:
-        # Run gcloud command to get model-garden models in JSON
-        result = subprocess.run(
-            ["gcloud", "ai", "model-garden", "models", "list", "--format=json"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        models_data = json.loads(result.stdout)
+        vertex_models = litellm.models_by_provider.get("vertex_ai", [])
         gemini_models = []
-        for model in models_data:
-            name = model.get("name", "")
-            # e.g., "publishers/google/models/gemini-2.5-flash"
-            if "gemini" in name:
-                model_base = name.split("/")[-1]  # "gemini-2.5-flash"
-                model_id = f"vertex_ai/{model_base}"
+        for model in vertex_models:
+            if "gemini" in model.lower():
+                # Ensure the model ID starts with "vertex_ai/"
+                model_id = model if model.startswith("vertex_ai/") else f"vertex_ai/{model}"
                 # Format a pretty display name
+                model_base = model.replace("vertex_ai/", "")
                 pretty_name = model_base.replace("-", " ").title()
                 if not any(m["id"] == model_id for m in gemini_models):
                     gemini_models.append({"id": model_id, "name": pretty_name})
         
         if not gemini_models:
-            logger.info("No gemini models found in gcloud output, using fallback list.")
+            logger.info("No Gemini models found in LiteLLM registry, using fallback list.")
             return FALLBACK_MODELS
             
-        logger.info(f"Dynamically discovered models: {[m['id'] for m in gemini_models]}")
-        return gemini_models
+        logger.info(f"Dynamically discovered models from LiteLLM: {[m['id'] for m in gemini_models]}")
+        return sorted(gemini_models, key=lambda x: x["id"])
     except Exception as e:
-        logger.warning(f"Failed to query model-garden via gcloud: {e}. Using fallback list.")
+        logger.warning(f"Failed to query LiteLLM registry: {e}. Using fallback list.")
         return FALLBACK_MODELS
+
 
 # Request / Response Schemas
 class ChatMessage(BaseModel):
